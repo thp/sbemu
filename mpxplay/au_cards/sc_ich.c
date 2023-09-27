@@ -15,11 +15,68 @@
 //function: Intel ICH audiocards low level routines
 //based on: ALSA (http://www.alsa-project.org) and ICH-DOS wav player from Jeff Leyda
 
-//#define MPXPLAY_USE_DEBUGF 1
+#define MPXPLAY_USE_DEBUGF 1
 #define ICH_DEBUG_OUTPUT stdout
 
 #include "mpxplay.h"
 #include <time.h>
+
+/**
+ * SIS7012 WIP Notes:
+ *
+ * - The channel mask bits (2, 4, 6 channels) in the global control block
+ *   (register 0x2c) are different -- which is important for masking out the
+ *   bits, but not important for setting bits, as SBEMU only uses 2-channel
+ *   audio, and 2-channel audio is set by clearing the 4-channel and 6-channel
+ *   bits -- that's ICH_PCM_246_MASK in both MPXPlay and Linux, Linux has the
+ *   mask as ICH_SIS_PCM_246_MASK
+ *
+ * - SIS7012 supports a "tertiary" codec with two additional flags (tertiary
+ *   resume irq, tertiary codec ready)
+ *
+ * - Linux assigns the device_type of DEVICE_SIS based on the PCI ID (MPXPlay
+ *   has basically the same enum, the PCI ID is just commented out)
+ *
+ * - In snd_intel8x0_setup_pcm_out(), the channel mask setting is different
+ *   (see above)
+ *
+ * - In snd_intel8x0_pcm_open(), both buffer_bytes_max and period_bytes_max are
+ *   set to 64 KiB -- seems like we create smaller buffers anyway, so SBEMU is
+ *   probably not affected by this
+ *
+ * - In snd_intel8x0_ich_chip_init(), the LSB of register 0x4c is set, and the
+ *   comment above it says "unmute the output on SIS7012", which is probably
+ *   kind of important..
+ *
+ * - Then, the ich_codec_bits[] has the tertiary for ICH4, but there's
+ *   sis_codec_bits[] which has its own tertiary codec (ICH_SIS_TCR) bit
+ *
+ * - In snd_intel8x0_init(), bdbars is 3 for DEVICE_INTEL and also 3 for
+ *   DEVICE_SIS, so this is probably fine
+ *
+ * - SIS7012 swaps the PICB (position in current buffer, offset 0x08) and SR
+ *   (status, offset 0x06) registers, this is put into "roff_sr" and
+ *   "roff_picb" of the ichdev, and then used throughout; would need
+ *   checking/updating to fix all the occurences and swap around
+ *
+ * - ichdev->pos_shift is 1 (divided by two) for normal ICH, and 0 (no division
+ *   by two) for SIS7012, the comment above says "SIS7012 handles the pcm data
+ *   in bytes, others are in samples" -- this also needs to be handled, and is
+ *   mostly relevant in setting up DMA and when retrieving the PCM pointer (for
+ *   writing?), there's also some reference to it in
+ *   intel8x0_measure_ac97_clock(), but this seems to be only relevant for
+ *   chips with a clock quirk
+ *
+ * - Then, when setting up max_codecs, codec_bit and codec_ready_bits, it also
+ *   takes care of the tertiary codec, but it might work just fine with two
+ *   codecs initialized (like normal ICH)
+ *
+ * References:
+ *   Linux: https://github.com/torvalds/linux/blob/master/sound/pci/intel8x0.c
+ *   FreeBSD: https://cgit.freebsd.org/src/tree/sys/dev/sound/pci/ich.c
+ *   OSSv4: http://www.4front-tech.com/developer/sources/stable/gpl/oss-v4.2-build2020-src-gpl.tar.bz2
+ *   JUDAS: https://github.com/volkertb/JUDAS/blob/master/JUDAS.C
+ */
 
 #ifdef AU_CARDS_LINK_ICH
 
@@ -34,7 +91,8 @@
 #define ICH_PO_CR_LVBIE   0x04  // last valid buffer interrupt enable
 #define ICH_PO_CR_IOCE    0x10  // IOC enable
 
-#define ICH_PO_SR_REG     0x16  // PCM out Status register
+#define ICH_PO_SR_REG     ((card->device_type==DEVICE_SIS)?0x18:0x16)  // PCM out Status register
+
 #define ICH_PO_SR_DCH     0x01  // DMA controller halted (RO)
 #define ICH_PO_SR_LVBCI   0x04  // last valid buffer completion interrupt (R/WC)
 #define ICH_PO_SR_BCIS    0x08  // buffer completion interrupt status (IOC) (R/WC)
@@ -48,6 +106,9 @@
 #define ICH_PCM_20BIT      0x00400000 // 20-bit samples (ICH4)
 #define ICH_PCM_246_MASK  0x00300000 // 6 channels (not all chips)
 
+// from Linux 6.6-rc3, sound/pci/intel8x0.c
+#define ICH_SIS_PCM_246_MASK  0x000000c0      /* 6 channels (SIS7012) */
+
 #define ICH_GLOB_STAT_REG 0x30       // Global Status register (RO)
 #define ICH_GLOB_STAT_PCR 0x00000100 // Primary codec is ready for action (software must check these bits before starting the codec!)
 #define ICH_GLOB_STAT_RCS 0x00008000 // read completion status
@@ -57,7 +118,8 @@
 #define ICH_PO_BDBAR_REG  0x10  // PCM out buffer descriptor BAR
 #define ICH_PO_LVI_REG    0x15  // PCM out Last Valid Index (set it)
 #define ICH_PO_CIV_REG    0x14  // PCM out current Index value (RO?)
-#define ICH_PO_PICB_REG   0x18  // PCM out position in current buffer(RO) (remaining, not processed pos)
+
+#define ICH_PO_PICB_REG   ((card->device_type==DEVICE_SIS)?0x16:0x18)  // PCM out position in current buffer(RO) (remaining, not processed pos)
 
 #define ICH_ACC_SEMA_REG  0x34  // codec write semiphore register
 #define ICH_CODEC_BUSY    0x01  // codec register I/O is happening self clearing
@@ -97,8 +159,8 @@ typedef struct intel_card_s
  float ac97_clock_corrector;
 }intel_card_s;
 
-enum { DEVICE_INTEL, DEVICE_INTEL_ICH4, DEVICE_NFORCE };
-static char *ich_devnames[3]={"ICH","ICH4","NForce"};
+enum { DEVICE_INTEL, DEVICE_INTEL_ICH4, DEVICE_NFORCE, DEVICE_SIS };
+static char *ich_devnames[4]={"ICH","ICH4","NForce","SIS7012"};
 
 static void snd_intel_measure_ac97_clock(struct mpxplay_audioout_info_s *aui);
 
@@ -130,6 +192,8 @@ static unsigned int snd_intel_codec_ready(struct intel_card_s *card,unsigned int
  return retry;
 }
 
+// compare: snd_intel8x0_codec_semaphore() in sound/pci/intel8x0.c
+// always called with codec == ICH_GLOB_STAT_PCR (0x00000100)
 static void snd_intel_codec_semaphore(struct intel_card_s *card,unsigned int codec)
 {
  unsigned int retry;
@@ -140,15 +204,17 @@ static void snd_intel_codec_semaphore(struct intel_card_s *card,unsigned int cod
  retry=ICH_DEFAULT_RETRY;
  do{
   if(!(snd_intel_read_8(card,ICH_ACC_SEMA_REG)&ICH_CODEC_BUSY))
-   break;
+   return;
   pds_delay_10us(10);
  }while(--retry);
 
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"semaphore timeout: %d",retry);
+
  // clear semaphore flag
- //inw(card->baseport_codec); // (removed for ICH0)
+ inw(card->baseport_codec); // (removed for ICH0)
 }
 
+// compare snd_intel8x0_codec_write()
 static void snd_intel_codec_write(struct intel_card_s *card,unsigned int reg,unsigned int data)
 {
  snd_intel_codec_semaphore(card,ICH_GLOB_STAT_PCR);
@@ -176,6 +242,13 @@ static unsigned int snd_intel_buffer_init(struct intel_card_s *card,struct mpxpl
 {
  unsigned int bytes_per_sample=(aui->bits_set>16)? 4:2;
 
+ // TODO: For DEVICE_SIS, we might need to implement buffer size, as
+ // the Linux kernel does (snd_intel8x0_pcm_open() in sound/pci/intel8x0.c)
+ // if (chip->device_type == DEVICE_SIS) {
+ //     runtime->hw.buffer_bytes_max = 64*1024;
+ //     runtime->hw.period_bytes_max = 64*1024;
+ // }
+
  card->pcmout_bufsize=MDma_get_max_pcmoutbufsize(aui,0,ICH_DMABUF_ALIGN,bytes_per_sample,0);
  card->dm=MDma_alloc_cardmem(ICH_DMABUF_MAX_PERIODS*2*sizeof(uint32_t)+card->pcmout_bufsize);
  card->virtualpagetable=(uint32_t *)card->dm->linearptr; // pagetable requires 8 byte align, but dos-allocmem gives 16 byte align (so we don't need alignment correction)
@@ -194,15 +267,41 @@ static void snd_intel_chip_init(struct intel_card_s *card)
 
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"clear status bits");
  cmd=snd_intel_read_32(card,ICH_GLOB_STAT_REG);
- cmd&=ICH_GLOB_STAT_RCS; // ???
- snd_intel_write_32(card,ICH_GLOB_STAT_REG,cmd);
+
+ // From Linux kernel
+
+ /* put logic to right state */
+ /* first clear status bits */
+#define   ICH_RCS               0x00008000      /* read completion status */
+#define   ICH_MCINT             0x00000080      /* MIC capture interrupt */
+#define   ICH_POINT             0x00000040      /* playback interrupt */
+#define   ICH_PIINT             0x00000020      /* capture interrupt */
+
+ unsigned int status = ICH_RCS | ICH_MCINT | ICH_POINT | ICH_PIINT;
+ //if (card->device_type == DEVICE_NFORCE)
+ //    status |= ICH_NVSPINT;
+ cmd &= status;
+ //cmd&=ICH_GLOB_STAT_RCS; // ???
+ //iputdword(chip, ICHREG(GLOB_STA), cnt & status);
+ snd_intel_write_32(card,ICH_GLOB_STAT_REG, cmd);
 
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"ACLink ON, set 2 channels");
  cmd = snd_intel_read_32(card, ICH_GLOB_CNT_REG);
- cmd&= ~(ICH_GLOB_CNT_ACLINKOFF | ICH_PCM_246_MASK);
+ if (card->device_type == DEVICE_SIS) {
+     cmd&= ~(ICH_GLOB_CNT_ACLINKOFF | ICH_SIS_PCM_246_MASK);
+ } else {
+     cmd&= ~(ICH_GLOB_CNT_ACLINKOFF | ICH_PCM_246_MASK);
+ }
  // finish cold or do warm reset
  cmd |= ((cmd&ICH_GLOB_CNT_AC97COLD)==0)? ICH_GLOB_CNT_AC97COLD : ICH_GLOB_CNT_AC97WARM;
  snd_intel_write_32(card, ICH_GLOB_CNT_REG, cmd);
+ /*
+ snd_intel_write_32(card, ICH_GLOB_CNT_REG, cmd & ~ICH_GLOB_CNT_AC97COLD);
+ cmd = snd_intel_read_32(card, ICH_GLOB_CNT_REG);
+ pds_delay_10us(10);
+ snd_intel_write_32(card, ICH_GLOB_CNT_REG, cmd | ICH_GLOB_CNT_AC97COLD);
+ pds_delay_10us(10);
+ */
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"AC97 reset type: %s",((cmd&ICH_GLOB_CNT_AC97COLD)? "cold":"warm"));
 
  retry=ICH_DEFAULT_RETRY;
@@ -224,6 +323,15 @@ static void snd_intel_chip_init(struct intel_card_s *card)
  //pds_mdelay(50);
  //snd_intel_write_8(card,ICH_PO_CR_REG,/*ICH_PO_CR_LVBIE*/ICH_PO_CR_IOCE);
  #endif
+
+ // code from sound/pci/intel8x0.c in linux-6.6-rc3
+ if (card->device_type == DEVICE_SIS) {
+     mpxplay_debugf(ICH_DEBUG_OUTPUT,"unmute the output on SIS7012");
+     /* unmute the output on SIS7012 */
+     mpxplay_debugf(ICH_DEBUG_OUTPUT,"SIS7012 register at 0x4c: %x", snd_intel_read_16(card, 0x4c));
+     snd_intel_write_16(card, 0x4c, snd_intel_read_16(card, 0x4c) | 1);
+     mpxplay_debugf(ICH_DEBUG_OUTPUT,"SIS7012 register at 0x4c later: %x", snd_intel_read_16(card, 0x4c));
+ }
 
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"chip init end");
 }
@@ -269,16 +377,26 @@ static void snd_intel_prepare_playback(struct intel_card_s *card,struct mpxplay_
  // reset codec
  snd_intel_write_8(card,ICH_PO_CR_REG, snd_intel_read_8(card, ICH_PO_CR_REG) | ICH_PO_CR_RESET);
 
- // set channels (2) and bits (16/32)
- cmd=snd_intel_read_32(card,ICH_GLOB_CNT_REG);
- funcbit_disable(cmd,(ICH_PCM_246_MASK | ICH_PCM_20BIT));
- if(aui->bits_set>16){
-  if((card->device_type==DEVICE_INTEL_ICH4) && ((snd_intel_read_32(card,ICH_GLOB_STAT_REG)&ICH_SAMPLE_CAP)==ICH_SAMPLE_16_20)){
-   aui->bits_card=32;
-   funcbit_enable(cmd,ICH_PCM_20BIT);
-  }
+ // Compare snd_intel8x0_setup_pcm_out() in Linux sound/pci/intel8x0.c
+ if (card->device_type == DEVICE_SIS) {
+     cmd = snd_intel_read_32(card, ICH_GLOB_CNT_REG);
+
+     // force 2 channels by masking out the 4- and 6-channel bits (ICH_SIS_PCM_2 == 0)
+     cmd &= ~ICH_SIS_PCM_246_MASK;
+
+     snd_intel_write_32(card, ICH_GLOB_CNT_REG, cmd);
+ } else {
+     // set channels (2) and bits (16/32)
+     cmd=snd_intel_read_32(card,ICH_GLOB_CNT_REG);
+     funcbit_disable(cmd,(ICH_PCM_246_MASK | ICH_PCM_20BIT));
+     if(aui->bits_set>16){
+      if((card->device_type==DEVICE_INTEL_ICH4) && ((snd_intel_read_32(card,ICH_GLOB_STAT_REG)&ICH_SAMPLE_CAP)==ICH_SAMPLE_16_20)){
+       aui->bits_card=32;
+       funcbit_enable(cmd,ICH_PCM_20BIT);
+      }
+     }
+     snd_intel_write_32(card,ICH_GLOB_CNT_REG,cmd);
  }
- snd_intel_write_32(card,ICH_GLOB_CNT_REG,cmd);
 
  // set spdif freq (???)
  switch(aui->freq_card){
@@ -309,7 +427,9 @@ static void snd_intel_prepare_playback(struct intel_card_s *card,struct mpxplay_
  for(i=0; i<ICH_DMABUF_PERIODS; i++){
   table_base[i*2]=(uint32_t)pds_cardmem_physicalptr(card->dm,(char *)card->pcmout_buffer+(i*card->period_size_bytes));
   #ifdef SBEMU
-  table_base[i*2+1]=period_size_samples |  (ICH_INT_INTERVAL && ((i%ICH_INT_INTERVAL==ICH_INT_INTERVAL-1)) ? (ICH_BD_IOC<<16) : 0);
+  /* From Linux kernel sources:
+   * SIS7012 handles the pcm data in bytes, others are in samples */
+  table_base[i*2+1]=((card->device_type==DEVICE_SIS)?card->period_size_bytes:period_size_samples) | (ICH_BD_IOC<<16);
   #else
   table_base[i*2+1]=period_size_samples;
   #endif
@@ -343,7 +463,7 @@ static pci_device_s ich_devices[]={
  {"ICH7"   ,0x8086,0x27de, DEVICE_INTEL_ICH4},
  {"ESB2"   ,0x8086,0x2698, DEVICE_INTEL_ICH4},
  {"440MX"  ,0x8086,0x7195, DEVICE_INTEL}, // maybe doesn't work (needs extra pci hack)
- //{"SI7012" ,0x1039,0x7012, DEVICE_SIS}, // needs extra code
+ {"SI7012" ,0x1039,0x7012, DEVICE_SIS},
  {"NFORCE" ,0x10de,0x01b1, DEVICE_NFORCE},
  {"MCP04"  ,0x10de,0x003a, DEVICE_NFORCE},
  {"NFORCE2",0x10de,0x006a, DEVICE_NFORCE},
