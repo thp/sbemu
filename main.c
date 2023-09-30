@@ -241,7 +241,6 @@ struct MAIN_OPT
 
     // Debug variables
     "IRQ Count", NULL, 0, 0, // irqs we saw for us
-    "IRQ Other", NULL, 0, 0, // irq for other devices
 
     "IOC Interrupts", NULL, 0, 0, // number of IOC interrupts received
     "BUP Interrupts", NULL, 0, 0, // number of BUP interrupts received
@@ -269,7 +268,6 @@ enum EOption
     OPT_COUNT,
 
     OPT_IRQ_COUNT,
-    OPT_IRQ_OTHER,
 
     OPT_IRQ_IOC_COUNT,
     OPT_IRQ_BUP_COUNT,
@@ -664,7 +662,6 @@ static void MAIN_InterruptPM()
     }
     else
     {
-        MAIN_Options[OPT_IRQ_OTHER].value++;
         BOOL InInt = MAIN_InINT;
         MAIN_InINT = TRUE;
         if(MAIN_IntContext.EFLAGS&CPU_VMFLAG)
@@ -687,7 +684,6 @@ static void MAIN_InterruptRM()
     }
     else
     {
-        MAIN_Options[OPT_IRQ_OTHER].value++;
         BOOL InInt = MAIN_InINT;
         MAIN_InINT = TRUE;
         DPMI_CallRealModeOldISR(&MAIN_IntHandleRM, &MAIN_IntREG);
