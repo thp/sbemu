@@ -540,8 +540,6 @@ static int INTELICH_adetect(struct mpxplay_audioout_info_s *aui)
  pcibios_set_master(card->pci_dev);
 
  card->baseport_bm = pcibios_ReadConfig_Dword(card->pci_dev, PCIR_NABMBAR)&0xfff0;
- mpxplay_debugf(ICH_DEBUG_OUTPUT," BAR0 (native audio mixer base address): %x", card->baseport_bm);
-
  #ifdef SBEMU
  //some BIOSes don't set NAMBAR/NABMBAR at all. assign manually
  int iobase = 0xF000; //0xFFFF didn't work
@@ -549,7 +547,6 @@ static int INTELICH_adetect(struct mpxplay_audioout_info_s *aui)
  {
      iobase &=~0x3F;
      pcibios_WriteConfig_Dword(card->pci_dev, PCIR_NABMBAR, iobase);
-     mpxplay_debugf(ICH_DEBUG_OUTPUT," native audio mixer base addr not set");
      card->baseport_bm = pcibios_ReadConfig_Dword(card->pci_dev, PCIR_NABMBAR)&0xfff0;
  }
  #endif
@@ -557,27 +554,22 @@ static int INTELICH_adetect(struct mpxplay_audioout_info_s *aui)
  if(!card->baseport_bm)
   goto err_adetect;
  card->baseport_codec = pcibios_ReadConfig_Dword(card->pci_dev, PCIR_NAMBAR)&0xfff0;
- mpxplay_debugf(ICH_DEBUG_OUTPUT," BAR1 (native audio bus mastering base address): %x", card->baseport_codec);
-
  #ifdef SBEMU
  if(card->baseport_codec == 0)
  {
     iobase -= 256;
     iobase &= ~0xFF;
     pcibios_WriteConfig_Dword(card->pci_dev, PCIR_NAMBAR, iobase);
-    mpxplay_debugf(ICH_DEBUG_OUTPUT," native audio bus mastering base addr not set");
     card->baseport_codec = pcibios_ReadConfig_Dword(card->pci_dev, PCIR_NAMBAR)&0xfff0;
  }
  #endif
  if(!card->baseport_codec)
   goto err_adetect;
  aui->card_irq = card->irq = pcibios_ReadConfig_Byte(card->pci_dev, PCIR_INTR_LN);
- mpxplay_debugf(ICH_DEBUG_OUTPUT," interrupt pin: %d", aui->card_irq);
  #ifdef SBEMU
  if(aui->card_irq == 0xFF || aui->card_irq == 0)
  {
      pcibios_WriteConfig_Byte(card->pci_dev, PCIR_INTR_LN, 11);
-     mpxplay_debugf(ICH_DEBUG_OUTPUT," no IRQ pin set, trying to force interrupt 11");
      aui->card_irq = card->irq = pcibios_ReadConfig_Byte(card->pci_dev, PCIR_INTR_LN);
  }
   #endif
@@ -631,8 +623,6 @@ static void INTELICH_setrate(struct mpxplay_audioout_info_s *aui)
    if(aui->freq_card>48000)
     aui->freq_card=48000;
  }
-
- mpxplay_debugf(ICH_DEBUG_OUTPUT, "aui->freq_card=%d\n", aui->freq_card);
 
  dmabufsize=MDma_init_pcmoutbuf(aui,card->pcmout_bufsize,ICH_DMABUF_ALIGN,0);
  card->period_size_bytes=dmabufsize/ICH_DMABUF_PERIODS;
