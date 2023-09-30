@@ -266,16 +266,6 @@ static unsigned int snd_intel_buffer_init(struct intel_card_s *card,struct mpxpl
 
  #ifdef SBEMU
  memset(card->pcmout_buffer, 0, card->pcmout_bufsize);
- #if 0
- // redirect buffer writes to dummy space
- cardmem_t *cm = MDma_alloc_cardmem(card->pcmout_bufsize);
- aui->card_DMABUFF = cm->linearptr;
-
- // keep playing sawtooth sound to see when DMA breaks
- for (int i=0; i<card->pcmout_bufsize; ++i) {
-     card->pcmout_buffer[i] = i & 0xff;
- }
- #endif
  #endif
 
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"buffer init: BDL:%8.8X pcmoutbuf:%8.8X size:%d",
