@@ -101,7 +101,6 @@
 #define ICH_PO_CR_START   0x01  // start codec
 #define ICH_PO_CR_RESET   0x02  // reset codec
 #define ICH_PO_CR_LVBIE   0x04  // last valid buffer interrupt enable
-#define ICH_PO_CR_FEIE    0x08    /* fifo error interrupt enable */
 #define ICH_PO_CR_IOCE    0x10  // IOC enable
 
 #define ICH_PO_SR_REG     ((card->device_type==DEVICE_SIS)?0x18:0x16)  // PCM out Status register ("Transfer Status")
@@ -344,7 +343,7 @@ static void snd_intel_chip_init(struct intel_card_s *card)
  snd_intel_write_8(card,ICH_PO_CR_REG,ICH_PO_CR_RESET); // reset channels
  #ifdef SBEMU
  // Enable the IOC interrupt
- snd_intel_write_8(card,ICH_PO_CR_REG,ICH_PO_CR_LVBIE | ICH_PO_CR_IOCE | ICH_PO_CR_FEIE);
+ snd_intel_write_8(card,ICH_PO_CR_REG,ICH_PO_CR_LVBIE | ICH_PO_CR_IOCE);
  #endif
 
  // code from sound/pci/intel8x0.c in linux-6.6-rc3
@@ -850,7 +849,7 @@ static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
 
       // This kicks off the playback of the buffers (again)
       snd_intel_write_8(card,ICH_PO_CR_REG, snd_intel_read_8(card, ICH_PO_CR_REG) |
-              ICH_PO_CR_START | ICH_PO_CR_IOCE | ICH_PO_CR_FEIE | ICH_PO_CR_LVBIE);
+              ICH_PO_CR_START | ICH_PO_CR_IOCE | ICH_PO_CR_LVBIE);
 
       // TODO: does this improve things?
       snd_intel_write_8(card,ICH_PO_LVI_REG,(ICH_DMABUF_PERIODS-1)); // set last index
@@ -862,11 +861,6 @@ static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
 
       // to keep playing in an endless loop
       snd_intel_write_8(card, ICH_PO_LVI_REG, (snd_intel_read_8(card,ICH_PO_LVI_REG) + 1) % ICH_DMABUF_PERIODS);
-  }
-
-  if (status & ICH_PO_SR_FIFO) {
-      // Linux does not handle this and just clears the interrupt
-      g_counts[SIS7012_DEBUG_FIFO_COUNT]++;
   }
 
   // acknowledge the interrupt we have seen

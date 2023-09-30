@@ -245,7 +245,6 @@ struct MAIN_OPT
 
     "IOC Interrupts", NULL, 0, 0, // number of IOC interrupts received
     "BUP Interrupts", NULL, 0, 0, // number of BUP interrupts received
-    "FIFO Interrupts", NULL, 0, 0, // number of FIFO interrupts received
 
     NULL, NULL, 0, 0,
 };
@@ -274,7 +273,6 @@ enum EOption
 
     OPT_IRQ_IOC_COUNT,
     OPT_IRQ_BUP_COUNT,
-    OPT_IRQ_FIFO_COUNT,
 };
 
 //T1~T6 maps
@@ -1014,7 +1012,6 @@ static void MAIN_TSR_Interrupt()
         {
             MAIN_Options[OPT_IRQ_IOC_COUNT].value = sis7012_get(SIS7012_DEBUG_IOC_COUNT);
             MAIN_Options[OPT_IRQ_BUP_COUNT].value = sis7012_get(SIS7012_DEBUG_BUP_COUNT);
-            MAIN_Options[OPT_IRQ_FIFO_COUNT].value = sis7012_get(SIS7012_DEBUG_FIFO_COUNT);
 
             MAIN_TSRREG.d.ebx = DPMI_PTR2L(MAIN_Options);
         }
