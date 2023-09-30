@@ -249,11 +249,7 @@ static unsigned int snd_intel_buffer_init(struct intel_card_s *card,struct mpxpl
 {
  unsigned int bytes_per_sample=(aui->bits_set>16)? 4:2;
 
- // TODO: Assume that this always results in 2 bytes per sample (16-bit)
- mpxplay_debugf(ICH_DEBUG_OUTPUT,"bytes per sample = %d (bits_set = %d)", bytes_per_sample, aui->bits_set);
-
  card->pcmout_bufsize=MDma_get_max_pcmoutbufsize(aui,0,ICH_DMABUF_ALIGN,bytes_per_sample,0);
- // TODO: Check if card->pcmout_buffer size is <= 64*1024
 
  size_t buffer_descriptor_list_size = ICH_DMABUF_MAX_PERIODS*ICH_BDL_ENTRY_SIZE;
 
