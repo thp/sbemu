@@ -15,20 +15,17 @@
 //function: Intel ICH audiocards low level routines
 //based on: ALSA (http://www.alsa-project.org) and ICH-DOS wav player from Jeff Leyda
 
+// 2023-09-30 Thomas Perl <m@thp.io>
+// SIS7012 support added, using these references:
+// Linux: https://github.com/torvalds/linux/blob/master/sound/pci/intel8x0.c
+// FreeBSD: https://cgit.freebsd.org/src/tree/sys/dev/sound/pci/ich.c
+// OSDev: https://wiki.osdev.org/AC97
+
 //#define MPXPLAY_USE_DEBUGF 1
 #define ICH_DEBUG_OUTPUT stdout
 
 #include "mpxplay.h"
 #include <time.h>
-
-/**
- * SIS 7012 support - 2023-09-30 Thomas Perl <m@thp.io>
- *
- * References:
- *   Linux: https://github.com/torvalds/linux/blob/master/sound/pci/intel8x0.c
- *   FreeBSD: https://cgit.freebsd.org/src/tree/sys/dev/sound/pci/ich.c
- *   OSDev: https://wiki.osdev.org/AC97
- */
 
 #ifdef AU_CARDS_LINK_ICH
 
@@ -696,7 +693,7 @@ static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
   if (status & ICH_PO_SR_BCIS) {
       // Buffer Completion Interrupt Status (aka IOC, when the high bit is set in the BDL size field)
 
-      // to keep playing in an endless loop
+      // advance the Last Valid Buffer Index
       snd_intel_write_8(card, ICH_PO_LVI_REG, (snd_intel_read_8(card,ICH_PO_LVI_REG) + 1) % ICH_DMABUF_PERIODS);
   }
 
