@@ -104,7 +104,6 @@
 #define ICH_PO_CR_FEIE    0x08    /* fifo error interrupt enable */
 #define ICH_PO_CR_IOCE    0x10  // IOC enable
 
-// https://wiki.osdev.org/AC97#0x06_0x16_0x26_Transfer_Status
 #define ICH_PO_SR_REG     ((card->device_type==DEVICE_SIS)?0x18:0x16)  // PCM out Status register ("Transfer Status")
 
 #define ICH_PO_SR_DCH     0x01  // DMA controller halted (RO)
@@ -119,8 +118,6 @@
 
 #define ICH_PCM_20BIT      0x00400000 // 20-bit samples (ICH4)
 #define ICH_PCM_246_MASK  0x00300000 // 6 channels (not all chips)
-
-// from Linux 6.6-rc3, sound/pci/intel8x0.c
 #define ICH_SIS_PCM_246_MASK  0x000000c0      /* 6 channels (SIS7012) */
 
 #define ICH_GLOB_STAT_REG 0x30       // Global Status register (RO)
@@ -206,8 +203,6 @@ static unsigned int snd_intel_codec_ready(struct intel_card_s *card,unsigned int
  return retry;
 }
 
-// compare: snd_intel8x0_codec_semaphore() in sound/pci/intel8x0.c
-// always called with codec == ICH_GLOB_STAT_PCR (0x00000100)
 static void snd_intel_codec_semaphore(struct intel_card_s *card,unsigned int codec)
 {
  unsigned int retry;
@@ -228,7 +223,6 @@ static void snd_intel_codec_semaphore(struct intel_card_s *card,unsigned int cod
  inw(card->baseport_codec); // (might be incompatible with ALI/ICH0?)
 }
 
-// compare snd_intel8x0_codec_write()
 static void snd_intel_codec_write(struct intel_card_s *card,unsigned int reg,unsigned int data)
 {
  snd_intel_codec_semaphore(card,ICH_GLOB_STAT_PCR);
@@ -259,13 +253,6 @@ static unsigned int snd_intel_buffer_init(struct intel_card_s *card,struct mpxpl
  // TODO: Assume that this always results in 2 bytes per sample (16-bit)
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"bytes per sample = %d (bits_set = %d)", bytes_per_sample, aui->bits_set);
 
- // TODO: For DEVICE_SIS, we might need to implement buffer size, as
- // the Linux kernel does (snd_intel8x0_pcm_open() in sound/pci/intel8x0.c)
- // if (chip->device_type == DEVICE_SIS) {
- //     runtime->hw.buffer_bytes_max = 64*1024;
- //     runtime->hw.period_bytes_max = 64*1024;
- // }
-
  card->pcmout_bufsize=MDma_get_max_pcmoutbufsize(aui,0,ICH_DMABUF_ALIGN,bytes_per_sample,0);
  // TODO: Check if card->pcmout_buffer size is <= 64*1024
 
@@ -281,8 +268,6 @@ static unsigned int snd_intel_buffer_init(struct intel_card_s *card,struct mpxpl
 
  // DMA buffer written by MDma_writedata() and MDma_clearbuf()
  aui->card_DMABUFF = card->pcmout_buffer;
-
- // TODO: also check aui->card_dmasize <= 64*1024
 
  #ifdef SBEMU
  memset(card->pcmout_buffer, 0, card->pcmout_bufsize);
@@ -419,7 +404,6 @@ static void snd_intel_prepare_playback(struct intel_card_s *card,struct mpxplay_
  // reset codec
  snd_intel_write_8(card,ICH_PO_CR_REG, snd_intel_read_8(card, ICH_PO_CR_REG) | ICH_PO_CR_RESET);
 
- // Compare snd_intel8x0_setup_pcm_out() in Linux sound/pci/intel8x0.c
  if (card->device_type == DEVICE_SIS) {
      cmd = snd_intel_read_32(card, ICH_GLOB_CNT_REG);
 
@@ -467,7 +451,6 @@ static void snd_intel_prepare_playback(struct intel_card_s *card,struct mpxplay_
 
  pds_delay_10us(1600);
 
- // aka Buffer Descriptor list: https://wiki.osdev.org/AC97#Buffer_Descriptor_List
  //set period table
  table_base=card->buffer_descriptor_list;
  period_size_samples=card->period_size_bytes/(aui->bits_card>>3);
@@ -501,7 +484,6 @@ static void snd_intel_prepare_playback(struct intel_card_s *card,struct mpxplay_
 
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"prepare playback end");
  #ifdef SBEMU
- // FIXME: Does this have to be adjusted for SIS7012?
  aui->card_samples_per_int = period_size_samples / 2;
  #endif
 }
@@ -572,10 +554,6 @@ static int INTELICH_adetect(struct mpxplay_audioout_info_s *aui)
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"chip init : enable PCI io and busmaster");
  pcibios_set_master(card->pci_dev);
 
- // osdev.org says: Before attempting to read the information about the BAR, make sure to disable both I/O and memory decode in the command byte
- // (this might just apply to trying to get the mapped memory size, though?)
-
- // TODO: Check if the type of the BAR is 16-bit (https://wiki.osdev.org/PCI#Base_Address_Registers)
  card->baseport_bm = pcibios_ReadConfig_Dword(card->pci_dev, PCIR_NABMBAR)&0xfff0;
  mpxplay_debugf(ICH_DEBUG_OUTPUT," BAR0 (native audio mixer base address): %x", card->baseport_bm);
 
@@ -593,7 +571,6 @@ static int INTELICH_adetect(struct mpxplay_audioout_info_s *aui)
 
  if(!card->baseport_bm)
   goto err_adetect;
- // TODO: Check if the type of the BAR is 16-bit (https://wiki.osdev.org/PCI#Base_Address_Registers)
  card->baseport_codec = pcibios_ReadConfig_Dword(card->pci_dev, PCIR_NAMBAR)&0xfff0;
  mpxplay_debugf(ICH_DEBUG_OUTPUT," BAR1 (native audio bus mastering base address): %x", card->baseport_codec);
 
@@ -660,8 +637,6 @@ static void INTELICH_setrate(struct mpxplay_audioout_info_s *aui)
  aui->chan_card=2;
  aui->bits_card=16;
 
- // FIXME: Maybe force this to 48000?
-
  if(!card->vra){
   aui->freq_card=48000;
  }else{
@@ -675,7 +650,6 @@ static void INTELICH_setrate(struct mpxplay_audioout_info_s *aui)
  mpxplay_debugf(ICH_DEBUG_OUTPUT, "aui->freq_card=%d\n", aui->freq_card);
 
  dmabufsize=MDma_init_pcmoutbuf(aui,card->pcmout_bufsize,ICH_DMABUF_ALIGN,0);
- // period size bytes... must be <= 0xFFFE * sample size (ref: https://wiki.osdev.org/AC97#Buffer_Descriptor_List)
  card->period_size_bytes=dmabufsize/ICH_DMABUF_PERIODS;
 
  if (card->device_type == DEVICE_SIS && card->period_size_bytes > 0xFFFE) {
@@ -693,7 +667,6 @@ static void INTELICH_start(struct mpxplay_audioout_info_s *aui)
  snd_intel_codec_ready(card,ICH_GLOB_STAT_PCR);
 
  #ifdef SBEMU
- // This kicks off the playback of the buffers
  snd_intel_write_8(card,ICH_PO_CR_REG, snd_intel_read_8(card,ICH_PO_CR_REG) |
          ICH_PO_CR_LVBIE | ICH_PO_CR_IOCE | ICH_PO_CR_START);
  //snd_intel_write_8(card,ICH_PO_LVI_REG,(snd_intel_read_8(card, ICH_PO_CIV_REG)-1)%ICH_DMABUF_PERIODS);
@@ -705,7 +678,6 @@ static void INTELICH_stop(struct mpxplay_audioout_info_s *aui)
  struct intel_card_s *card=aui->card_private_data;
  unsigned char cmd;
 
- // this stops playback of the buffers (clear ICH_PO_CR_START flag)
  cmd=snd_intel_read_8(card,ICH_PO_CR_REG);
  funcbit_disable(cmd,ICH_PO_CR_START);
  snd_intel_write_8(card,ICH_PO_CR_REG,cmd);
@@ -774,7 +746,6 @@ static void INTELICH_writedata(struct mpxplay_audioout_info_s *aui,char *src,uns
 
 #if 0
  #ifdef SBEMU
- // FIXME -- the Last Valid Buffer Entry should probably be set to how much we have mixed?
  snd_intel_write_8(card,ICH_PO_LVI_REG,(snd_intel_read_8(card, ICH_PO_CIV_REG)-1)%ICH_DMABUF_PERIODS);
  #else
  index=aui->card_dmalastput/card->period_size_bytes;
@@ -799,7 +770,6 @@ static long INTELICH_getbufpos(struct mpxplay_audioout_info_s *aui)
     continue;
    MDma_clearbuf(aui);
    //snd_intel_write_8(card,ICH_PO_LVI_REG,(ICH_DMABUF_PERIODS-1));
-   // FIXME: CIV is read-only, this cannot be set
    snd_intel_write_8(card,ICH_PO_CIV_REG,0);
    funcbit_enable(aui->card_infobits,AUINFOS_CARDINFOBIT_DMAUNDERRUN);
    continue;
@@ -872,12 +842,8 @@ int sis7012_get(enum SIS7012_DebugVars var)
 static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
 {
   intel_card_s *card=aui->card_private_data;
-
-  // TODO: Maybe clear resume interrupt (like FreeBSD)?
-
   int status = snd_intel_read_8(card,ICH_PO_SR_REG);
 
-  // Could handle interrupts here
   if (status & ICH_PO_SR_LVBCI) {
       // Last Valid Buffer Completion -- this seems to signify DMA underrun
       g_counts[SIS7012_DEBUG_BUP_COUNT]++;
@@ -902,8 +868,6 @@ static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
       // Linux does not handle this and just clears the interrupt
       g_counts[SIS7012_DEBUG_FIFO_COUNT]++;
   }
-
-  // TODO: FreeBSD handles (status & (ICH_PO_SR_LVBCI | ICH_PO_SR_BCIS)) as incrementing the current buffer
 
   // acknowledge the interrupt we have seen
   snd_intel_write_8(card, ICH_PO_SR_REG, status & (ICH_PO_SR_LVBCI | ICH_PO_SR_BCIS | ICH_PO_SR_FIFO));
