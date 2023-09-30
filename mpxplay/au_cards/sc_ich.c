@@ -21,8 +21,6 @@
 #include "mpxplay.h"
 #include <time.h>
 
-#include "sis7012_debug.h"
-
 /**
  * SIS 7012 support - 2023-09-30 Thomas Perl <m@thp.io>
  *
@@ -678,14 +676,6 @@ static unsigned long INTELICH_readMIXER(struct mpxplay_audioout_info_s *aui,unsi
  return snd_intel_codec_read(card,reg);
 }
 
-static int
-g_counts[SIS7012_DEBUG_LAST];
-
-int sis7012_get(enum SIS7012_DebugVars var)
-{
-    return g_counts[var];
-}
-
 #ifdef SBEMU
 static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
 {
@@ -694,7 +684,6 @@ static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
 
   if (status & ICH_PO_SR_LVBCI) {
       // Last Valid Buffer Completion -- this seems to signify DMA underrun
-      g_counts[SIS7012_DEBUG_BUP_COUNT]++;
 
       // Reset the Last Valid Index, so we don't underrun again immediately
       snd_intel_write_8(card, ICH_PO_LVI_REG, (ICH_DMABUF_PERIODS-1));
@@ -706,7 +695,6 @@ static int INTELICH_IRQRoutine(mpxplay_audioout_info_s* aui)
 
   if (status & ICH_PO_SR_BCIS) {
       // Buffer Completion Interrupt Status (aka IOC, when the high bit is set in the BDL size field)
-      g_counts[SIS7012_DEBUG_IOC_COUNT]++;
 
       // to keep playing in an endless loop
       snd_intel_write_8(card, ICH_PO_LVI_REG, (snd_intel_read_8(card,ICH_PO_LVI_REG) + 1) % ICH_DMABUF_PERIODS);

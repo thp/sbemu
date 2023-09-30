@@ -16,7 +16,6 @@
 
 #include <mpxplay.h>
 #include <au_mixer/mix_func.h>
-#include <au_cards/sis7012_debug.h>
 
 #ifndef MAIN_SBEMU_VER
 #define MAIN_SBEMU_VER "1.0 beta3"
@@ -237,15 +236,7 @@ struct MAIN_OPT
     "/SC", "Select sound card index in list (/SCL)", 0, MAIN_SETCMD_HIDDEN,
     "/R", "Reset sound card driver", 0, MAIN_SETCMD_HIDDEN,
 
-    NULL, NULL, 0, 0,
-
-    // Debug variables
-    "IRQ Count", NULL, 0, 0, // irqs we saw for us
-
-    "IOC Interrupts", NULL, 0, 0, // number of IOC interrupts received
-    "BUP Interrupts", NULL, 0, 0, // number of BUP interrupts received
-
-    NULL, NULL, 0, 0,
+    NULL, NULL, 0,
 };
 enum EOption
 {
@@ -266,11 +257,6 @@ enum EOption
     OPT_RESET,
 
     OPT_COUNT,
-
-    OPT_IRQ_COUNT,
-
-    OPT_IRQ_IOC_COUNT,
-    OPT_IRQ_BUP_COUNT,
 };
 
 //T1~T6 maps
@@ -694,8 +680,6 @@ static void MAIN_InterruptRM()
 
 static void MAIN_Interrupt()
 {
-    MAIN_Options[OPT_IRQ_COUNT].value++;
-
     #if 0
     aui.card_outbytes = aui.card_dmasize;
     int space = AU_cardbuf_space(&aui)+2048;
@@ -972,14 +956,6 @@ void MAIN_TSR_InstallationCheck()
                 if(!(MAIN_Options[i].setcmd&MAIN_SETCMD_HIDDEN))
                     printf("%-8s: %x\n", MAIN_Options[i].option, opt[i].value);
             }
-
-            // debug variables
-            for (int i=OPT_COUNT + 1; ; ++i) {
-                if (!MAIN_Options[i].option) {
-                    break;
-                }
-                printf(" %s: %d\n", MAIN_Options[i].option, opt[i].value);
-            }
             free(opt);
             exit(0);
         }
@@ -1006,9 +982,6 @@ static void MAIN_TSR_Interrupt()
         return;
         case 0x01: //query
         {
-            MAIN_Options[OPT_IRQ_IOC_COUNT].value = sis7012_get(SIS7012_DEBUG_IOC_COUNT);
-            MAIN_Options[OPT_IRQ_BUP_COUNT].value = sis7012_get(SIS7012_DEBUG_BUP_COUNT);
-
             MAIN_TSRREG.d.ebx = DPMI_PTR2L(MAIN_Options);
         }
         return;
