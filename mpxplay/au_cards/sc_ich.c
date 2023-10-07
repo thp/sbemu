@@ -241,6 +241,26 @@ static void snd_intel_chip_close(struct intel_card_s *card)
   snd_intel_write_8(card,ICH_PO_CR_REG,ICH_PO_CR_RESET); // reset codec
 }
 
+static const uint16_t AD1980_WIN98_REGISTER_VALUES[] = {
+    0x0090, 0x0303, 0x0303, 0x0003, 0x0000, 0x0000, 0x8008, 0x8048,
+    0x8888, 0x0c0c, 0x0000, 0x8888, 0x0707, 0x0000, 0x0808, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x000f, 0x03c3, 0x3831, 0x49b3, 0xbb80,
+    0xbb80, 0xbb80, 0x0000, 0x8080, 0x8080, 0x2000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x1000, 0x0000,
+    0x8080, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0a88, 0x7000, 0xe428, 0x0000, 0x0000, 0x4144, 0x5370,
+};
+
+static void
+force_win98_regs(struct intel_card_s *card)
+{
+    // start at index 1 -- don't write the reset register
+    for (int i=1; i<sizeof(AD1980_WIN98_REGISTER_VALUES)/sizeof(AD1980_WIN98_REGISTER_VALUES[0]); ++i) {
+        snd_intel_codec_write(card, i, AD1980_WIN98_REGISTER_VALUES[i]);
+    }
+}
+
 static void snd_intel_ac97_init(struct intel_card_s *card,unsigned int freq_set)
 {
  // initial ac97 volumes (and clear mute flag)
@@ -255,6 +275,9 @@ static void snd_intel_ac97_init(struct intel_card_s *card,unsigned int freq_set)
   if(snd_intel_codec_read(card,AC97_EXTENDED_STATUS)&AC97_EA_VRA)
    card->vra=1;
  }
+
+ force_win98_regs(card);
+
  mpxplay_debugf(ICH_DEBUG_OUTPUT,"ac97 init end (vra:%d)",card->vra);
 }
 
@@ -321,6 +344,8 @@ static void snd_intel_prepare_playback(struct intel_card_s *card,struct mpxplay_
  }else
   snd_intel_codec_write(card,AC97_PCM_FRONT_DAC_RATE,aui->freq_card);
  pds_delay_10us(1600);
+
+ force_win98_regs(card);
 
  //set period table
  table_base=card->virtualpagetable;
@@ -666,7 +691,7 @@ static long INTELICH_getbufpos(struct mpxplay_audioout_info_s *aui)
 static void INTELICH_writeMIXER(struct mpxplay_audioout_info_s *aui,unsigned long reg, unsigned long val)
 {
  struct intel_card_s *card=aui->card_private_data;
- snd_intel_codec_write(card,reg,val);
+ //snd_intel_codec_write(card,reg,val);
 }
 
 static unsigned long INTELICH_readMIXER(struct mpxplay_audioout_info_s *aui,unsigned long reg)
