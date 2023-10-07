@@ -257,7 +257,7 @@ force_win98_regs(struct intel_card_s *card)
 {
     // start at index 1 -- don't write the reset register
     for (int i=1; i<sizeof(AD1980_WIN98_REGISTER_VALUES)/sizeof(AD1980_WIN98_REGISTER_VALUES[0]); ++i) {
-        snd_intel_codec_write(card, i, AD1980_WIN98_REGISTER_VALUES[i]);
+        snd_intel_codec_write(card, i * sizeof(uint16_t), AD1980_WIN98_REGISTER_VALUES[i]);
     }
 }
 
