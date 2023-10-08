@@ -3,7 +3,7 @@ CC := i586-pc-msdosdjgpp-gcc
 CXX := i586-pc-msdosdjgpp-g++
 DEBUG ?= 0
 
-VERSION ?= $(shell git describe --tags)
+VERSION ?= $(shell git describe --tags --always --dirty)
 
 INCLUDES := -I./mpxplay -I./sbemu
 DEFINES := -D__DOS__ -DSBEMU -DDEBUG=$(DEBUG) -DMAIN_SBEMU_VER=\"$(VERSION)\"
