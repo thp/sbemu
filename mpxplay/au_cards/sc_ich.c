@@ -263,13 +263,13 @@ force_win98_regs(struct intel_card_s *card)
     }
 #endif
     snd_intel_codec_write(card, 0x02, 0x0303); // master volume
-    snd_intel_codec_write(card, 0x06, 0x0003); // mono volume
-    snd_intel_codec_write(card, 0x0e, 0x8048); // mic volume (likely irrelevant?)
+    //snd_intel_codec_write(card, 0x06, 0x0003); // mono volume
+    //snd_intel_codec_write(card, 0x0e, 0x8048); // mic volume (likely irrelevant?)
     // ignored for now: volumes in 0x10 (line in, CD, aux, PCM out, record gain)
 
-    snd_intel_codec_write(card, 0x2a, 0x3831); // power down center, surround, LFE DACs; SPDIF slot assignment (possibly irrelevant?)
+    //snd_intel_codec_write(card, 0x2a, 0x3831); // power down center, surround, LFE DACs; SPDIF slot assignment (possibly irrelevant?)
     // ignored for now: 0x2c -> PCM front DAC rate
-    snd_intel_codec_write(card, 0x72, 0x0a88); // jack sensing setup (likely irrelevant?)
+    //snd_intel_codec_write(card, 0x72, 0x0a88); // jack sensing setup (likely irrelevant?)
     snd_intel_codec_write(card, 0x74, 0x7000); // enable slave 1 + slave 2 codec register mask, disable SPLNK
     snd_intel_codec_write(card, 0x76, 0xe428); // advanced AD-specific settings, mute split, lodis, etc...
 }
